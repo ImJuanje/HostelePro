@@ -1,6 +1,13 @@
-// Ejecutar una sola vez con: node seed.js
-// Rellena mesas, categorías y productos iniciales.
-// Si vuelves a ejecutarlo, no duplica lo que ya exista (usa INSERT OR IGNORE).
+// Ejecutar con: node seed.js  (o "railway run node seed.js" para la BD real)
+//
+// Este script BORRA y vuelve a crear mesas, categorías y productos a partir
+// de los arrays de abajo. Es la forma de actualizar la carta o el número de
+// mesas por ahora, mientras no exista un panel de administración:
+//   1. Edita los arrays NUMERO_DE_MESAS / categorias / productos aquí abajo
+//   2. Guarda y ejecuta este archivo otra vez
+//
+// Es seguro: los pedidos ya hechos no se tocan (cada línea de pedido guarda
+// su propio nombre/precio, no depende de la tabla de productos).
 
 const db = require('./db');
 
@@ -31,24 +38,24 @@ const productos = [
   { categoria_id: 'postres', nombre: 'Tarta de queso', descripcion: '', precio: 4.20, alergenos: ['lácteos', 'gluten'], popular: 1 }
 ];
 
-const insertarMesa = db.prepare(`INSERT OR IGNORE INTO mesas (numero) VALUES (?)`);
+// ---------- Borrar todo lo anterior ----------
+db.exec(`DELETE FROM productos; DELETE FROM categorias; DELETE FROM mesas;`);
+
+// ---------- Repoblar ----------
+const insertarMesa = db.prepare(`INSERT INTO mesas (numero) VALUES (?)`);
 for (let n = 1; n <= NUMERO_DE_MESAS; n++) {
   insertarMesa.run(n);
 }
 
-const insertarCategoria = db.prepare(`INSERT OR IGNORE INTO categorias (id, nombre, orden) VALUES (?, ?, ?)`);
+const insertarCategoria = db.prepare(`INSERT INTO categorias (id, nombre, orden) VALUES (?, ?, ?)`);
 categorias.forEach(c => insertarCategoria.run(c.id, c.nombre, c.orden));
 
-const contarProductos = db.prepare(`SELECT COUNT(*) AS total FROM productos WHERE categoria_id = ? AND nombre = ?`);
 const insertarProducto = db.prepare(`
   INSERT INTO productos (categoria_id, nombre, descripcion, precio, alergenos, popular)
   VALUES (?, ?, ?, ?, ?, ?)
 `);
 productos.forEach(p => {
-  const existe = contarProductos.get(p.categoria_id, p.nombre).total;
-  if (existe === 0) {
-    insertarProducto.run(p.categoria_id, p.nombre, p.descripcion, p.precio, JSON.stringify(p.alergenos), p.popular || 0);
-  }
+  insertarProducto.run(p.categoria_id, p.nombre, p.descripcion, p.precio, JSON.stringify(p.alergenos), p.popular || 0);
 });
 
-console.log(`Sembrado: ${NUMERO_DE_MESAS} mesas, ${categorias.length} categorías, ${productos.length} productos.`);
+console.log(`Repoblado: ${NUMERO_DE_MESAS} mesas, ${categorias.length} categorías, ${productos.length} productos.`);
