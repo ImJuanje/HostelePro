@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cocina · HosteléPro</title>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  :root {
+    --pizarra: #1c2321;
+    --pizarra-alta: #262f2c;
+    --tiza: #f2ede3;
+    --tiza-tenue: #b7c2bc;
+    --mostaza: #e0a638;
+    --oliva: #7c9070;
+    --linea: #3a4441;
+    --radio: 10px;
+    --f-display: 'Caveat', cursive;
+    --f-cuerpo: 'Inter', system-ui, sans-serif;
+    --f-ticket: 'Space Mono', monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--pizarra);
+    color: var(--tiza);
+    font-family: var(--f-cuerpo);
+    padding: 20px;
+  }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  h1 {
+    font-family: var(--f-display);
+    font-size: 32px;
+    margin: 0;
+  }
+
+  .estado-conexion {
+    font-family: var(--f-ticket);
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    background: #6b2b2b;
+    color: var(--tiza);
+  }
+  .estado-conexion.conectado { background: var(--oliva); color: var(--pizarra); }
+
+  .config-servidor {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-family: var(--f-ticket);
+    font-size: 12px;
+  }
+  .config-servidor input {
+    background: var(--pizarra-alta);
+    border: 1px solid var(--linea);
+    color: var(--tiza);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-family: var(--f-ticket);
+    font-size: 12px;
+    width: 220px;
+  }
+  .config-servidor button {
+    background: var(--linea);
+    color: var(--tiza);
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-family: var(--f-ticket);
+    font-size: 12px;
+  }
+
+  .tablero {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .sin-pedidos {
+    color: var(--tiza-tenue);
+    font-family: var(--f-ticket);
+    font-size: 14px;
+    padding: 40px 0;
+    text-align: center;
+    grid-column: 1 / -1;
+  }
+
+  .ticket {
+    background: var(--pizarra-alta);
+    border: 1px solid var(--linea);
+    border-radius: var(--radio);
+    padding: 16px;
+    border-left: 4px solid var(--mostaza);
+    animation: entrada 0.3s ease;
+  }
+  .ticket.listo { border-left-color: var(--oliva); opacity: 0.55; }
+
+  @keyframes entrada {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .ticket-cabecera {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+
+  .ticket-mesa {
+    font-family: var(--f-display);
+    font-size: 24px;
+    color: var(--tiza);
+  }
+
+  .ticket-hora {
+    font-family: var(--f-ticket);
+    font-size: 11px;
+    color: var(--tiza-tenue);
+  }
+
+  .ticket-linea {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    padding: 5px 0;
+    border-bottom: 1px dashed var(--linea);
+  }
+  .ticket-linea:last-of-type { border-bottom: none; }
+  .ticket-linea .cant { color: var(--mostaza); font-family: var(--f-ticket); margin-right: 6px; }
+
+  .btn-listo {
+    width: 100%;
+    margin-top: 14px;
+    background: var(--oliva);
+    color: var(--pizarra);
+    border: none;
+    border-radius: 6px;
+    padding: 10px;
+    font-family: var(--f-ticket);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+  }
+  .btn-listo:disabled {
+    background: var(--linea);
+    color: var(--tiza-tenue);
+    cursor: default;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🍳 Cocina</h1>
+  <div class="config-servidor">
+    <input type="text" id="urlServidor" value="http://localhost:3000" placeholder="URL del backend">
+    <button id="btnConectar">Conectar</button>
+    <span class="estado-conexion" id="estadoConexion">desconectado</span>
+  </div>
+</header>
+
+<div class="tablero" id="tablero">
+  <p class="sin-pedidos">Esperando pedidos...</p>
+</div>
+
+<script>
+let socket = null;
+const tablero = document.getElementById("tablero");
+const estadoConexion = document.getElementById("estadoConexion");
+
+function formatoPrecio(n) {
+  return Number(n).toFixed(2).replace(".", ",") + " €";
+}
+
+function formatoHora(iso) {
+  const fecha = new Date(iso);
+  return fecha.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+}
+
+function limpiarTableroSiVacio() {
+  if (tablero.children.length === 0) {
+    tablero.innerHTML = '<p class="sin-pedidos">Esperando pedidos...</p>';
+  }
+}
+
+function renderTicket(pedido) {
+  const mensajeVacio = tablero.querySelector(".sin-pedidos");
+  if (mensajeVacio) mensajeVacio.remove();
+
+  const div = document.createElement("div");
+  div.className = "ticket";
+  div.id = "pedido-" + pedido.id;
+
+  const lineas = pedido.items.map(item => `
+    <div class="ticket-linea">
+      <span><span class="cant">${item.cantidad}x</span>${item.nombre}${item.notas ? " — " + item.notas : ""}</span>
+    </div>
+  `).join("");
+
+  div.innerHTML = `
+    <div class="ticket-cabecera">
+      <span class="ticket-mesa">${pedido.mesa}</span>
+      <span class="ticket-hora">${formatoHora(pedido.creado_en)}</span>
+    </div>
+    ${lineas}
+    <button class="btn-listo">Marcar listo</button>
+  `;
+
+  div.querySelector(".btn-listo").addEventListener("click", () => {
+    socket.emit("pedido-listo", { id: pedido.id, mesa: pedido.mesa });
+  });
+
+  tablero.prepend(div);
+}
+
+function marcarComoListo(id) {
+  const ticket = document.getElementById("pedido-" + id);
+  if (!ticket) return;
+  ticket.classList.add("listo");
+  const boton = ticket.querySelector(".btn-listo");
+  boton.textContent = "✓ Listo";
+  boton.disabled = true;
+  // Se retira del tablero pasado un rato para no acumular tickets viejos
+  setTimeout(() => {
+    ticket.remove();
+    limpiarTableroSiVacio();
+  }, 6000);
+}
+
+async function cargarPedidosPendientes(urlBase) {
+  try {
+    const respuesta = await fetch(urlBase + "/api/pedidos/pendientes");
+    const pedidos = await respuesta.json();
+    tablero.innerHTML = "";
+    if (pedidos.length === 0) {
+      limpiarTableroSiVacio();
+    } else {
+      pedidos.forEach(p => renderTicket(p));
+    }
+  } catch (error) {
+    console.error("No se pudieron cargar los pedidos pendientes:", error);
+  }
+}
+
+function conectar() {
+  const urlBase = document.getElementById("urlServidor").value.trim();
+  if (!urlBase) return;
+
+  if (socket) socket.disconnect();
+
+  socket = io(urlBase);
+
+  socket.on("connect", () => {
+    estadoConexion.textContent = "conectado";
+    estadoConexion.classList.add("conectado");
+    socket.emit("unirse-cocina");
+    cargarPedidosPendientes(urlBase);
+  });
+
+  socket.on("disconnect", () => {
+    estadoConexion.textContent = "desconectado";
+    estadoConexion.classList.remove("conectado");
+  });
+
+  socket.on("pedido-recibido", (pedido) => {
+    renderTicket(pedido);
+    // Aviso sonoro simple para que cocina no tenga que mirar la pantalla todo el rato
+    if (typeof AudioContext !== "undefined") {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      osc.frequency.value = 880;
+      osc.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.15);
+    }
+  });
+
+  socket.on("pedido-actualizado", (datos) => {
+    if (datos.estado === "listo") marcarComoListo(datos.id);
+  });
+}
+
+document.getElementById("btnConectar").addEventListener("click", conectar);
+window.addEventListener("load", conectar);
+</script>
+</body>
+</html>
